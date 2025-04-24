@@ -1,9 +1,9 @@
 # ui/__init__.py
 # This file can be left empty, but it's necessary to make Python treat the directory as a package
-#Add transaction history view
-#Implement transfer fees
-#Add more detailed transaction tracking
-#Implement transfer limits
+# Add transaction history view
+# Implement transfer fees
+# Add more detailed transaction tracking
+# Implement transfer limits
 # fetures to add:
 # - Transaction history view{
 # every user should be able to see their transaction history,

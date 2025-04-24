@@ -8,6 +8,7 @@ class DatabaseManager:
         self.conn = sqlite3.connect(db_name)
         self.create_tables()
         self.initialize_money_codes()
+        self.migrate_add_transactions_table()
 
     def create_tables(self):
      cursor = self.conn.cursor()
@@ -15,12 +16,12 @@ class DatabaseManager:
     # Create users table with all columns from the start
      cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        wallet_id TEXT UNIQUE NOT NULL,
-        balance REAL DEFAULT 0.0,
-        pin TEXT NOT NULL  # Changed from DEFAULT '0000' to NOT NULL
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            wallet_id TEXT UNIQUE NOT NULL,
+            balance REAL DEFAULT 0.0,
+            pin TEXT NOT NULL DEFAULT '0000' 
     )
     ''')
     
@@ -41,6 +42,17 @@ class DatabaseManager:
             recipient_username TEXT NOT NULL,
             amount REAL NOT NULL,
             timestamp DATETIME NOT NULL
+        )
+    ''')
+     cursor.execute('''
+        CREATE TABLE IF NOT EXISTS transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender_username TEXT NOT NULL,
+            recipient_username TEXT NOT NULL,
+            amount REAL NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(sender_username) REFERENCES users(username),
+            FOREIGN KEY(recipient_username) REFERENCES users(username)
         )
     ''')
     
@@ -208,41 +220,29 @@ class DatabaseManager:
         self.conn.close()
 
     def send_money(self, sender_username, recipient_wallet, amount):
-        cursor = self.conn.cursor()
-        
-        try:
-            # Start a transaction
-            self.conn.start_transaction()
-        except Exception as e:
-            # Rollback in case of any error
-            self.conn.rollback()
-            raise  # Re-raise the exception to be handled in the UI
+      """Send money from one user to another"""
+      cursor = self.conn.cursor()
+      try:
+        # Begin transaction
+        cursor.execute("BEGIN TRANSACTION")
         
         # Validate amount
         if amount <= 0:
             raise ValueError("Amount must be greater than zero")
         
-        # Check sender's details and balance
+        # Check sender's details
         cursor.execute('''
             SELECT wallet_id, balance FROM users 
             WHERE username = ?
         ''', (sender_username,))
-        sender_details = cursor.fetchone()
+        sender = cursor.fetchone()
         
-        if not sender_details:
+        if not sender:
             raise ValueError("Sender account not found")
+            
+        sender_wallet, sender_balance = sender
         
-        sender_wallet_id, sender_balance = sender_details
-        
-        # Prevent sending money to own wallet
-        if sender_wallet_id == recipient_wallet:
-            raise ValueError("Cannot send money to your own wallet")
-        
-        # Check sender's balance
-        if sender_balance < amount:
-            raise ValueError(f"Insufficient funds. Current balance: ${sender_balance:.2f}")
-        
-        # Find recipient by wallet ID
+        # Check recipient exists
         cursor.execute('''
             SELECT username FROM users 
             WHERE wallet_id = ?
@@ -250,29 +250,29 @@ class DatabaseManager:
         recipient = cursor.fetchone()
         
         if not recipient:
-            raise ValueError("Recipient wallet not found. Please check the wallet ID.")
-        
+            raise ValueError("Recipient wallet not found")
+            
         recipient_username = recipient[0]
         
-        # Prevent sending to the same user
-        if recipient_username == sender_username:
-            raise ValueError("Cannot send money to yourself")
+        # Validate transaction
+        if sender_wallet == recipient_wallet:
+            raise ValueError("Cannot send to your own wallet")
+            
+        if sender_balance < amount:
+            raise ValueError(f"Insufficient funds (Balance: ${sender_balance:.2f})")
         
-        # Deduct from sender
+        # Perform transfer
         cursor.execute('''
-            UPDATE users 
-            SET balance = balance - ? 
+            UPDATE users SET balance = balance - ? 
             WHERE username = ?
         ''', (amount, sender_username))
         
-        # Add to recipient
         cursor.execute('''
-            UPDATE users 
-            SET balance = balance + ? 
+            UPDATE users SET balance = balance + ? 
             WHERE username = ?
         ''', (amount, recipient_username))
         
-        # Optional: Create a transaction log (you can expand this later)
+        # Record transaction
         cursor.execute('''
             INSERT INTO transactions (
                 sender_username, 
@@ -282,8 +282,57 @@ class DatabaseManager:
             ) VALUES (?, ?, ?, datetime('now'))
         ''', (sender_username, recipient_username, amount))
         
-        # Commit transaction
         self.conn.commit()
         return True
+        
+      except Exception as e:
+        self.conn.rollback()
+        raise  # Re-raise the exception
+           
+    def get_username_by_wallet_id(self, wallet_id):
+       """Get username associated with a wallet ID"""
+       cursor = self.conn.cursor()
+       cursor.execute('SELECT username FROM users WHERE wallet_id = ?', (wallet_id,))
+       result = cursor.fetchone()
+       return result[0] if result else None
     
+    # Add to your DatabaseManager class
+    def get_user_balance(self, username):
+       """Get current user balance"""
+       cursor = self.conn.cursor()
+       cursor.execute('SELECT balance FROM users WHERE username = ?', (username,))
+       result = cursor.fetchone()
+       return result[0] if result else 0
     
+    def migrate_add_transactions_table(self):
+       cursor = self.conn.cursor()
+       try:
+           cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='transactions'")
+           if not cursor.fetchone():
+            self.create_tables()  # Will create missing tables
+       except Exception as e:
+        print(f"Migration error: {str(e)}")
+    
+    def get_transaction_history(self, username):
+      """Get all transactions for a specific user"""
+      cursor = self.conn.cursor()
+      try:
+          cursor.execute('''
+            SELECT 
+                sender_username, 
+                recipient_username, 
+                amount, 
+                timestamp,
+                CASE
+                    WHEN sender_username = ? THEN 'Sent'
+                    ELSE 'Received'
+                END as type
+            FROM transactions
+            WHERE sender_username = ? OR recipient_username = ?
+            ORDER BY timestamp DESC
+        ''', (username, username, username))
+        
+          return cursor.fetchall()
+      except Exception as e:
+        print(f"Error fetching transactions: {str(e)}")
+        return []

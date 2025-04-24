@@ -1,11 +1,35 @@
 import sys
 import pyqtgraph as pg
 from PyQt5.QtWidgets import QApplication, QStackedWidget
+from PyQt5.QtWidgets import QSplashScreen
+from PyQt5.QtGui import QPixmap
+from PyQt5.QtCore import Qt, QTimer
 from database import DatabaseManager
 from ui.login_window import LoginWindow
 from ui.signup_window import SignupWindow
 from ui.wallet_window import WalletWindow
+import os
+os.environ['QT_AUTO_SCREEN_SCALE_FACTOR'] = '1'
 
+def main():
+    app = QApplication(sys.argv)
+    
+    # Create and show splash screen
+    splash_pix = QPixmap('logo.png')
+    splash = QSplashScreen(splash_pix, Qt.WindowStaysOnTopHint)
+    splash.show()
+    
+    # Center the splash screen
+    splash.move(app.primaryScreen().geometry().center() - splash.rect().center())
+    
+    # Load your main application
+    wallet_app = WalletApp()
+    
+    # Close splash after 2 seconds (2000ms)
+    QTimer.singleShot(2000, splash.close)
+    QTimer.singleShot(2000, wallet_app.show)
+    
+    sys.exit(app.exec_())
 class WalletApp(QStackedWidget):
     def __init__(self):
         super().__init__()

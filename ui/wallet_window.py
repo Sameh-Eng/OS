@@ -2,6 +2,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton,
                              QMessageBox, QHBoxLayout, QLineEdit, QDialog, 
                              QFormLayout,QApplication, QListWidget)
 from PyQt5.QtCore import pyqtSignal
+from ui.base_window import BaseWindow
 class TransactionWindow(QWidget):
     def __init__(self, db_manager, username):
         super().__init__()
@@ -43,14 +44,19 @@ class TransactionWindow(QWidget):
     def load_transactions(self):
         self.transaction_list.clear()
         transactions = self.db_manager.get_transaction_history(self.username)
-        
+    
         if not transactions:
             self.transaction_list.addItem("No transactions found")
             return
-            
+    
         for t in transactions:
-            item = (f"{t[4]} | {t[1]} → {t[2]} | ${t[3]:.2f}")
-            self.transaction_list.addItem(item)
+        # t[0]=sender, t[1]=recipient, t[2]=amount, t[3]=timestamp, t[4]=type
+            if t[4] == 'Sent':
+                text = f"{t[3]} | Sent ${t[2]:.2f} to {t[1]}"
+            else:
+                text = f"{t[3]} | Received ${t[2]:.2f} from {t[0]}"
+        
+        self.transaction_list.addItem(text)
 class SendMoneyDialog(QDialog):
     def __init__(self, db_manager, sender_username, parent=None):
         super().__init__(parent)
@@ -80,40 +86,48 @@ class SendMoneyDialog(QDialog):
         self.setLayout(layout)
 
     def send_money(self):
-        recipient_wallet = self.recipient_input.text().strip()
+      recipient_wallet = self.recipient_input.text().strip()
+    
+      try:
+        amount = float(self.amount_input.text())
+        if amount <= 0:
+            raise ValueError("Amount must be positive")
+            
+        # Get recipient username for confirmation
+        recipient_username = self.db_manager.get_username_by_wallet_id(recipient_wallet)
+        if not recipient_username:
+            raise ValueError("Wallet not found")
+            
+        # Confirmation dialog
+        confirm = QMessageBox.question(
+            self,
+            "Confirm Transfer",
+            f"Send ${amount:.2f} to {recipient_username} ({recipient_wallet})?",
+            QMessageBox.Yes | QMessageBox.No
+        )
         
-        try:
-            # Validate amount input
-            amount = float(self.amount_input.text())
-        except ValueError:
-            QMessageBox.warning(self, 'Error', 'Please enter a valid number')
-            return
-
-        # Validate inputs
-        if not recipient_wallet:
-            QMessageBox.warning(self, 'Error', 'Please enter a recipient wallet ID')
-            return
-
-        try:
-            # Attempt to send money
-            result = self.db_manager.send_money(
-                self.sender_username, 
-                recipient_wallet, 
+        if confirm == QMessageBox.Yes:
+            # Correct call with proper arguments
+            self.db_manager.send_money(
+                self.sender_username,
+                recipient_wallet,
                 amount
             )
-            
-            # Show success message
-            QMessageBox.information(self, 'Success', 
-                f'Successfully sent ${amount:.2f} to wallet {recipient_wallet}')
+            QMessageBox.information(
+                self,
+                "Success",
+                f"Sent ${amount:.2f} to {recipient_username}"
+            )
             self.accept()
-
-        except ValueError as ve:
-            # Handle specific validation errors
-            QMessageBox.warning(self, 'Transaction Error', str(ve))
-        except Exception as e:
-            # Handle any unexpected errors
-            QMessageBox.critical(self, 'Error', 
-                f'An unexpected error occurred: {str(e)}')
+            
+      except ValueError as ve:
+        QMessageBox.warning(self, "Input Error", str(ve))
+      except Exception as e:
+        QMessageBox.critical(
+            self,
+            "Transfer Failed",
+            f"An error occurred: {str(e)}"
+        )
 class ReceiveMoneyDialog(QDialog):
     def __init__(self, db_manager, username):
       super().__init__()
@@ -203,3 +217,59 @@ class WalletWindow(QWidget):
         layout.addWidget(logout_btn)
 
         self.setLayout(layout)
+         
+    def redeem_money_code(self):
+      code = self.code_input.text().strip()
+    
+      if not code:
+        QMessageBox.warning(self, 'Error', 'Please enter a money code')
+        return
+
+      amount = self.db_manager.validate_and_use_money_code(code)
+    
+      if amount is not None:
+        self.db_manager.add_balance_to_user(self.username, amount)
+        self.refresh_balance()
+        QMessageBox.information(self, 'Success', 
+            f'Code redeemed! ${amount:.2f} added to your wallet.')
+        self.code_input.clear()
+      else:
+        QMessageBox.warning(self, 'Error', 'Invalid or already used money code')
+
+    def open_send_money_dialog(self):
+      """Open the send money dialog window"""
+      dialog = SendMoneyDialog(self.db_manager, self.username, self)
+      if dialog.exec_():  # This makes the dialog modal
+        # Refresh balance after sending money
+        self.refresh_balance()
+    
+    def open_receive_money_dialog(self):
+      """Open the receive money dialog window"""
+      dialog = ReceiveMoneyDialog(self.db_manager, self.username)
+      dialog.exec_()  # This makes the dialog modal
+
+    def copy_wallet_id(self):
+      """Copy wallet ID to clipboard"""
+      clipboard = QApplication.clipboard()
+      clipboard.setText(self.wallet_id)
+      QMessageBox.information(self, "Copied", "Wallet ID copied to clipboard!")
+
+    def show_transaction_history(self):
+      """Show transaction history window"""
+      self.transaction_window = TransactionWindow(self.db_manager, self.username)
+      self.transaction_window.show()
+
+    def refresh_balance(self):
+      """Refresh the displayed balance"""
+      wallet_info = self.db_manager.get_user_wallet_info(self.username)
+      _, new_balance = wallet_info
+      self.balance_label.setText(f'Balance: ${new_balance:.2f}')
+
+    def logout(self):
+      """Handle logout"""
+      reply = QMessageBox.question(self, 'Logout', 
+                               'Are you sure you want to logout?', 
+                               QMessageBox.Yes | QMessageBox.No)
+      if reply == QMessageBox.Yes:
+        self.logout_signal.emit()
+        self.close()
