@@ -87,7 +87,7 @@ class WalletApp(QStackedWidget):
 def main():
     app = QApplication(sys.argv)
     wallet_app = WalletApp()
-    wallet_app.setWindowTitle('Wallet App')
+    wallet_app.setWindowTitle('CryptoSam')
     wallet_app.resize(400, 300)
     wallet_app.show()
     sys.exit(app.exec_())

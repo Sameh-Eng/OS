@@ -1,13 +1,15 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QLineEdit, 
                              QPushButton, QMessageBox)
 from PyQt5.QtCore import pyqtSignal
-
+from secure_logger import SecureLogger
 class LoginWindow(QWidget):
     login_successful = pyqtSignal(str)
     switch_to_signup = pyqtSignal()
 
     def __init__(self, db_manager):
         super().__init__()
+        self.logger = SecureLogger("wallet_login")
+        self.logger.log("Login window initialized")
         self.db_manager = db_manager
         self.init_ui()
 
@@ -46,7 +48,9 @@ class LoginWindow(QWidget):
 
         if self.db_manager.validate_login(username, password):
             self.login_successful.emit(username)
+            self.logger.log(f"Successful login: {username}")
         else:
             QMessageBox.warning(self, 'Login Failed', 'Invalid username or password')
+            self.logger.log(f"Login failed for {username}: {str(e)}") # type: ignore
             
             __all__ = ['LoginWindow']

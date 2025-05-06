@@ -2,15 +2,15 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QListWidget,
                             QLineEdit, QPushButton, QMessageBox)
 
 class TransactionWindow(QWidget):
-    def __init__(self, db_manager, username):
-        super().__init__()
+    def __init__(self, db_manager, username, parent=None):
+        super().__init__(parent)
         self.db_manager = db_manager
         self.username = username
         self.setWindowTitle("Transaction History")
         self.resize(500, 400)
-        self.setup_ui()
-        
-    def setup_ui(self):
+        self.init_ui()
+    
+    def init_ui(self):
         layout = QVBoxLayout()
         
         # PIN Entry
@@ -42,16 +42,11 @@ class TransactionWindow(QWidget):
     def load_transactions(self):
         self.transaction_list.clear()
         transactions = self.db_manager.get_transaction_history(self.username)
-    
+        
         if not transactions:
             self.transaction_list.addItem("No transactions found")
             return
-    
+            
         for t in transactions:
-        # t[0]=sender, t[1]=recipient, t[2]=amount, t[3]=timestamp, t[4]=type
-            if t[4] == 'Sent':
-                text = f"{t[3]} | Sent ${t[2]:.2f} to {t[1]}"
-        else:
-            text = f"{t[3]} | Received ${t[2]:.2f} from {t[0]}"
-        
-        self.transaction_list.addItem(text)
+            item = f"{t[4]} | {t[1]} → {t[2]} | ${t[3]:.2f}"
+            self.transaction_list.addItem(item)

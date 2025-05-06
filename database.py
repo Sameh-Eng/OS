@@ -1,3 +1,4 @@
+from secure_logger import SecureLogger
 import sqlite3
 import hashlib
 import uuid
@@ -6,6 +7,8 @@ import secrets
 class DatabaseManager:
     def __init__(self, db_name='wallet_app.db'):
         self.conn = sqlite3.connect(db_name)
+        self.logger = SecureLogger("wallet_db")
+        self.logger.log("Database connection established")
         self.create_tables()
         self.initialize_money_codes()
         self.migrate_add_transactions_table()
@@ -283,10 +286,12 @@ class DatabaseManager:
         ''', (sender_username, recipient_username, amount))
         
         self.conn.commit()
+        self.logger.log(f"Money sent: {sender_username} -> {recipient_wallet} ${amount}")
         return True
         
       except Exception as e:
         self.conn.rollback()
+        self.logger.log(f"Send money failed: {str(e)}")
         raise  # Re-raise the exception
            
     def get_username_by_wallet_id(self, wallet_id):
@@ -336,3 +341,17 @@ class DatabaseManager:
       except Exception as e:
         print(f"Error fetching transactions: {str(e)}")
         return []
+      
+    # database.py
+    def get_user_data(self, username):
+        cursor = self.conn.cursor()
+        cursor.execute('''
+          SELECT username, email 
+          FROM users 
+          WHERE username = ?
+      ''', (username,))
+        row = cursor.fetchone()
+        return {
+        'username': row[0],
+        'email': row[1]
+    } if row else None
